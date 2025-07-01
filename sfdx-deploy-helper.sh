@@ -159,7 +159,74 @@ INFO: Cleaning up..."
     "org-snapshot")
         echo "Org Snapshot Comparison Based Deployment (Under Development)"
         echo "This mode will compare the target Salesforce org with local source and generate a deploy package."
-        # TODO: Implement Task 2.2 to 2.5 here
+        # --- 2.2 Acquire Organization Snapshot ---
+        ORG_SNAPSHOT_DIR="tmp_org_snapshot"
+        echo "[1/X] Acquiring organization snapshot from '$TARGET_ORG'..."
+        if [ -d "$ORG_SNAPSHOT_DIR" ]; then
+            rm -rf "$ORG_SNAPSHOT_DIR"
+        fi
+        mkdir "$ORG_SNAPSHOT_DIR"
+
+        # Retrieve all metadata from the target org. This can be time-consuming for large orgs.
+        # A more refined approach might involve retrieving a package.xml first, then retrieving based on that.
+        sf project retrieve start -m "all" -r "$ORG_SNAPSHOT_DIR" -o "$TARGET_ORG"
+
+        echo "✅ Organization snapshot acquired in '$ORG_SNAPSHOT_DIR' directory."
+        # --- 2.3 Compare with Local Source and Generate Manifests ---
+        DIFF_DIR="tmp_diff_package"
+        echo "[2/X] Comparing organization snapshot with local source and generating manifests..."
+        if [ -d "$DIFF_DIR" ]; then
+            rm -rf "$DIFF_DIR"
+        fi
+        mkdir "$DIFF_DIR"
+
+        # Compare the retrieved snapshot with the local force-app directory
+        # This command generates package.xml and destructiveChanges.xml based on the diff
+        sf project deploy diff --source-dir force-app --output-dir "$DIFF_DIR" --target-org "$TARGET_ORG"
+
+        echo "✅ Diff package generated in '$DIFF_DIR' directory."
+
+        # --- 2.4 Analyze Destructive Changes (from diff) ---
+        DESTRUCTIVE_XML="$DIFF_DIR/destructiveChanges.xml"
+        DELETED_MEMBERS=()
+
+        if [ -f "$DESTRUCTIVE_XML" ]; then
+            mapfile -t DELETED_MEMBERS < <(grep -o '<members>.*</members>' "$DESTRUCTIVE_XML" | sed -e 's/<members>//' -e 's/\/members>//')
+
+            if [ ${#DELETED_MEMBERS[@]} -gt 0 ]; then
+                echo "🔍 Found ${#DELETED_MEMBERS[@]} component(s) to be deleted:"
+                for member in "${DELETED_MEMBERS[@]}"; do
+                    echo "  - $member"
+                done
+            else
+                echo "✅ No components to delete."
+            fi
+        else
+            echo "✅ No destructive changes found."
+        fi
+
+        # --- 2.5 Execute Deployment and Cleanup ---
+        echo "\n[3/X] Deploying to org '$TARGET_ORG'..."
+
+        DEPLOY_COMMAND="sf project deploy start --manifest \"$DIFF_DIR/package.xml\" --target-org \"$TARGET_ORG\" --test-level RunLocalTests"
+
+        if [ -f "$DESTRUCTIVE_XML" ]; then
+            DEPLOY_COMMAND="$DEPLOY_COMMAND --pre-destructive-changes \"$DESTRUCTIVE_XML\""
+        fi
+
+        eval $DEPLOY_COMMAND
+
+        echo "\n🎉 Deployment successful! 🎉"
+
+        # Cleanup temporary directories
+        echo "\nINFO: Cleaning up..."
+        if [ -d "$ORG_SNAPSHOT_DIR" ]; then
+            rm -rf "$ORG_SNAPSHOT_DIR"
+        fi
+        if [ -d "$DIFF_DIR" ]; then
+            rm -rf "$DIFF_DIR"
+        fi
+        echo "Cleanup complete."
         ;;
     *)
         echo "Error: Invalid mode specified. Use 'git-diff' or 'org-snapshot'."
