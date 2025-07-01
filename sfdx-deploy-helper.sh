@@ -58,7 +58,11 @@ case "$MODE" in
         fi
         mkdir "$TMP_DIR"
 
-        sfdx sgd:source:delta --to "HEAD" --from "$BASE_BRANCH" --output "$TMP_DIR/" > /dev/null
+                sf sgd:source:delta --to "HEAD" --from "$BASE_BRANCH" --generate-delta --output-dir "$TMP_DIR/" > "$TMP_DIR/sgd_output.log" 2>&1
+
+        echo "DEBUG: Contents of $TMP_DIR:"
+        ls -l "$TMP_DIR"
+        cat "$TMP_DIR/sgd_output.log" # Add this line to display the log content
 
         echo "✅ Delta package generated in '$TMP_DIR' directory."
 
@@ -145,7 +149,7 @@ INFO: Cleaning up..."
         echo "
 [5/5] Deploying to org '$TARGET_ORG'..."
 
-        DEPLOY_COMMAND="sf project deploy start --manifest \"$TMP_DIR/package.xml\" --target-org \"$TARGET_ORG\" --test-level RunLocalTests"
+        DEPLOY_COMMAND="sf project deploy start --manifest \"$TMP_DIR/package/package.xml\" --target-org \"$TARGET_ORG\" --test-level RunLocalTests"
 
         if [ -f "$DESTRUCTIVE_XML" ]; then
             DEPLOY_COMMAND="$DEPLOY_COMMAND --pre-destructive-changes \"$DESTRUCTIVE_XML\""
